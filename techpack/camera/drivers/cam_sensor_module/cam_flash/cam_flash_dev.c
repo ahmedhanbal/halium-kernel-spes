@@ -4,10 +4,23 @@
  */
 
 #include <linux/module.h>
+#include <linux/leds.h>
+#include <linux/platform_device.h>
+#include <linux/of.h>
+#include <linux/gpio.h>
+#include <linux/sysfs.h>
+#include <linux/fs.h>
+#include <linux/uaccess.h>
+#include <linux/kobject.h>
+#include <linux/of_gpio.h>
+#include <linux/pinctrl/consumer.h>
 #include "cam_flash_dev.h"
 #include "cam_flash_soc.h"
 #include "cam_flash_core.h"
 #include "cam_common_util.h"
+
+static int flashlight_probe(struct platform_device *pdev);
+
 
 /* Spes flashlight by muralivijay@github */
 #ifdef CONFIG_CAMERA_FLASH_SPES
@@ -429,10 +442,7 @@ static int32_t cam_flash_platform_probe(struct platform_device *pdev)
 	struct cam_flash_ctrl *fctrl     = NULL;
 	struct device_node *of_parent    = NULL;
 	struct cam_hw_soc_info *soc_info = NULL;
-/* Spes flashlight by muralivijay@github */
-#ifdef CONFIG_CAMERA_FLASH_SPES
-        struct device_node *gnode = pdev->dev.of_node; //store qcom-flash-gpios
-#endif
+
 
 	CAM_DBG(CAM_FLASH, "Enter");
 	if (!pdev->dev.of_node) {
@@ -540,28 +550,6 @@ static int32_t cam_flash_platform_probe(struct platform_device *pdev)
 		fctrl->func_tbl.flush_req = cam_flash_pmic_flush_request;
 	}
 
-/* Spes flashlight by muralivijay@github */
-#ifdef CONFIG_CAMERA_FLASH_SPES
-                // Get flash_en GPIO
-                /*Xiaomi added tlmm 85 pin in dts used as flash mode in camera */
-                mgpio_flash_led.flash_en = of_get_named_gpio(gnode, "qcom,flash-gpios", 0);
-                if (!gpio_is_valid(mgpio_flash_led.flash_en)) {
-                // Handle error if GPIO is not valid
-                CAM_ERR(CAM_FLASH, "Invalid GPIO for flash_en");
-               }
-                CAM_INFO(CAM_FLASH, "flash_en GPIO: %d", mgpio_flash_led.flash_en);
-
-                // Get flash_now GPIO
-                /*Xiaomi added pm6125_gpios 2 pin in dts  mainly used as torch mode */
-                mgpio_flash_led.flash_now = of_get_named_gpio(gnode, "qcom,flash-gpios", 1);
-                if (!gpio_is_valid(mgpio_flash_led.flash_now)) {
-                // Handle error if GPIO is not valid
-                CAM_ERR(CAM_FLASH, "Invalid GPIO for flash_en");
-               }
-                CAM_INFO(CAM_FLASH, "flash_now GPIO: %d", mgpio_flash_led.flash_now);
-#endif
-/* Spes flashlight by muralivijay@github */
-
 	rc = cam_flash_init_subdev(fctrl);
 	if (rc) {
 		if (fctrl->io_master_info.cci_client != NULL)
@@ -582,6 +570,15 @@ static int32_t cam_flash_platform_probe(struct platform_device *pdev)
 
 	fctrl->flash_state = CAM_FLASH_STATE_INIT;
 	CAM_DBG(CAM_FLASH, "Probe success");
+	#ifdef CONFIG_CAMERA_FLASH_SPES
+	// Call flashlight_probe function
+	rc = flashlight_probe(pdev);
+	if (rc) {
+		CAM_ERR(CAM_FLASH, "flashlight_probe failed with %d", rc);
+		goto free_cci_resource;
+	}
+	#endif
+
 	return rc;
 
 free_cci_resource:
@@ -596,6 +593,54 @@ free_resource:
 	kfree(fctrl);
 	fctrl = NULL;
 	return rc;
+}
+
+static struct led_classdev flashlight_led;
+
+
+static void flashlight_brightness_set(struct led_classdev *led_cdev, enum led_brightness brightness)
+{
+	gpio_set_value(mgpio_flash_led.flash_now, brightness ? 1 : 0);
+}
+
+static enum led_brightness flashlight_brightness_get(struct led_classdev *led_cdev)
+{
+	return gpio_get_value(mgpio_flash_led.flash_now) ? LED_FULL : LED_OFF;
+}
+
+
+static int flashlight_probe(struct platform_device *pdev)
+{
+	int ret;
+	struct device_node *gnode = pdev->dev.of_node;
+
+	// Get flash_en GPIO
+	mgpio_flash_led.flash_en = of_get_named_gpio(gnode, "qcom,flash-gpios", 0);
+	if (!gpio_is_valid(mgpio_flash_led.flash_en)) {
+		CAM_ERR(CAM_FLASH, "Invalid GPIO for flash_en");
+		return -ENODEV;
+	}
+	CAM_INFO(CAM_FLASH, "flash_en GPIO: %d", mgpio_flash_led.flash_en);
+
+	// Get flash_now GPIO
+	mgpio_flash_led.flash_now = of_get_named_gpio(gnode, "qcom,flash-gpios", 1);
+	if (!gpio_is_valid(mgpio_flash_led.flash_now)) {
+		CAM_ERR(CAM_FLASH, "Invalid GPIO for flash_now");
+		return -ENODEV;
+	}
+	CAM_INFO(CAM_FLASH, "flash_now GPIO: %d", mgpio_flash_led.flash_now);
+
+	// Register LED class device
+	flashlight_led.name = "led:torch";
+	flashlight_led.brightness_set= flashlight_brightness_set;
+	flashlight_led.brightness_get = flashlight_brightness_get;
+	ret = led_classdev_register(&pdev->dev, &flashlight_led);
+	if (ret) {
+		CAM_ERR(CAM_FLASH, "Failed to register LED class device");
+		return ret;
+	}
+
+	return 0;
 }
 
 static int32_t cam_flash_i2c_driver_probe(struct i2c_client *client,
@@ -712,6 +757,12 @@ free_ctrl:
 }
 
 MODULE_DEVICE_TABLE(of, cam_flash_dt_match);
+
+static const struct of_device_id flashlight_of_match[] = {
+	{ .compatible = "qcom,camera-flash" },
+	{},
+};
+MODULE_DEVICE_TABLE(of, flashlight_of_match);
 
 static struct platform_driver cam_flash_platform_driver = {
 	.probe = cam_flash_platform_probe,
