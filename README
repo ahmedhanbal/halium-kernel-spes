@@ -1,19 +1,9 @@
-Linux kernel
-============
+# Halium Kernel for Xiaomi Redmi Note 11 (spes)
 
-There are several guides for kernel developers and users. These guides can
-be rendered in a number of formats, like HTML and PDF. Please read
-Documentation/admin-guide/README.rst first.
+This repository hosts the Halium kernel for the Xiaomi Redmi Note 11 (spes). The kernel was compiled using **Clang** with the toolchain from [Shubhamvis98/toolchains](https://github.com/Shubhamvis98/toolchains). The compiled files are available in the [Releases](https://github.com/ahmedhanbal/halium-kernel-spes/releases/) section.
 
-In order to build the documentation, use ``make htmldocs`` or
-``make pdfdocs``.  The formatted documentation can also be read online at:
+## Credits
 
-    https://www.kernel.org/doc/html/latest/
+- **Kernel Source**: [halium-spes/halium-kernel](https://github.com/halium-spes/halium-kernel)
+- **Toolchain**: [Shubhamvis98/toolchains](https://github.com/Shubhamvis98/toolchains)
 
-There are various text files in the Documentation/ subdirectory,
-several of them using the Restructured Text markup notation.
-See Documentation/00-INDEX for a list of what is contained in each file.
-
-Please read the Documentation/process/changes.rst file, as it contains the
-requirements for building and running the kernel, and information about
-the problems which may result by upgrading your kernel.
